@@ -20,8 +20,8 @@ Aplicación web para generar menús semanales personalizados con IA (Ollama), co
 | | zod | Validación de schemas |
 | | cors + helmet | Seguridad |
 | | dotenv | Config vars |
-| | node-fetch | Llamadas HTTP a Ollama |
-| **IA Local** | Ollama + qwen2.5:7b | Generación de menús y sugerencias |
+| | (fetch nativo Node 24+) | Llamadas HTTP a Ollama |
+| **IA Local** | Ollama + qwen3.5 (9B) | Generación de menús y sugerencias en español |
 | **Base de Datos** | PostgreSQL | Persistencia |
 
 ---
@@ -109,7 +109,7 @@ WhatToEat/
 │   ├── tsconfig.json
 │   └── package.json
 │
-├── docker-compose.yml               # PostgreSQL
+├── .env                             # Variables de entorno
 ├── PLAN.md                          # Este archivo
 ├── README.md
 ├── LICENSE                          # Apache 2.0
@@ -472,6 +472,7 @@ CREATE TABLE favorite_dishes (
 ```
 System: Eres un chef nutricionista especializado en menús personalizados.
 Respondes ÚNICAMENTE con JSON válido, sin texto adicional.
+RESPONDES EN ESPAÑOL. Todos los nombres de platillos, ingredientes y pasos deben estar en español.
 
 Datos del usuario:
 - Edad: {age}, Género: {gender}
@@ -521,6 +522,7 @@ Formato JSON:
 
 ```
 System: Eres un chef nutricionista. Contexto del usuario: {profileContext}
+RESPONDES EN ESPAÑOL. Todos los nombres, ingredientes y pasos en español.
 
 User: En el menú del día {day}, reemplaza la {mealType}
 actual ("{currentDish}").
@@ -548,7 +550,7 @@ Formato JSON:
 ### Prompt: Sugerir Cocinas
 
 ```
-System: Recomienda tipos de cocina ideales para este perfil:
+System: RESPONDES EN ESPAÑOL. Recomienda tipos de cocina ideales para este perfil:
 - Mujer, {age} años, sedentaria
 - Objetivo: bajar de peso con déficit calórico
 - Cocina rápida (<30 min preparación)
@@ -564,6 +566,7 @@ User: ¿Qué cocinas me recomiendas?
 
 ```
 System: {profileContext}
+RESPONDES EN ESPAÑOL. Todos los nombres y descripciones en español.
 
 Genera 10 platillos variados que este usuario podría disfrutar.
 NO incluyas estos platillos ya mostrados anteriormente:
@@ -603,7 +606,7 @@ El backend encapsula toda la lógica de comunicación con Ollama en `ollamaServi
 // server/src/services/ollamaService.ts
 class OllamaService {
   private baseUrl = "http://localhost:11434";
-  private model = "qwen2.5:7b";
+  private model = "qwen3.5";
 
   async chat(prompt: string, systemPrompt: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
@@ -722,12 +725,14 @@ Estados de animación:
 ## Consideraciones Técnicas
 
 ### Rendimiento
-- Ollama en RTX 3060 12GB con qwen2.5:7b: ~20-40 tok/s
-- Generación de menú completo: ~10-20 segundos
-- El frontend debe mostrar un estado "Generando..." con el cinnamon roll animado
+- Ollama en RTX 3060 4GB con qwen3.5 (6.6GB): el modelo no cabe completo en VRAM
+- Ollama hace **offloading parcial**: capas se ejecutan en GPU (4GB) y el resto en CPU+RAM
+- Generación estimada: ~5-15 tok/s (depende de la carga de CPU)
+- Generación de menú completo: ~20-40 segundos
+- El frontend debe mostrar un estado "Generando..." con el cinnamon roll animado y barra de progreso
 
 ### Errores y Timeouts
-- Si Ollama no responde en 30s, backend retorna error 503
+- Si Ollama no responde en 60s, backend retorna error 503 (qwen3.5 tarda más por offloading parcial)
 - Si la respuesta de Ollama no es JSON válido, reintentar 1 vez con temperatura más baja
 - Si el parseo falla, devolver error con mensaje amigable
 
@@ -739,9 +744,9 @@ Estados de animación:
 ### Variables de Entorno (`.env`)
 ```
 PORT=3001
-DATABASE_URL=postgresql://user:pass@localhost:5432/whattoeat
+DATABASE_URL=postgresql://postgres:Contra123@localhost:5432/whattoeat
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=qwen3.5
 CLIENT_URL=http://localhost:5173
 ```
 

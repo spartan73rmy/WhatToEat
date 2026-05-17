@@ -2,6 +2,16 @@ import { ollamaService } from "./ollamaService";
 import pool from "../db/pool";
 import { getConfig } from "../db/queries";
 
+function extractJson(raw: string): string {
+  const jsonStart = raw.indexOf('{');
+  const arrayStart = raw.indexOf('[');
+  const start = jsonStart === -1 ? arrayStart : arrayStart === -1 ? jsonStart : Math.min(jsonStart, arrayStart);
+  if (start === -1) throw new Error("No se encontró JSON en la respuesta de la IA");
+  const end = raw[start] === '[' ? raw.lastIndexOf(']') : raw.lastIndexOf('}');
+  if (end === -1) throw new Error("JSON mal formado en la respuesta de la IA");
+  return raw.slice(start, end + 1);
+}
+
 export async function generateMenu(params: {
   name: string;
   cuisines?: string[];
@@ -90,7 +100,7 @@ Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada d�
 IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TODAS sus comidas. No repitas platillos en la misma semana.`;
 
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
-  const parsed = JSON.parse(raw);
+  const parsed = JSON.parse(extractJson(raw));
 
   const menuRes = await pool.query(
     `INSERT INTO weekly_menus (name, config_snapshot, cuisine_overrides, difficulty, pantry)
@@ -197,7 +207,7 @@ Formato JSON:
 }`;
 
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
-  const newMeal = JSON.parse(raw);
+  const newMeal = JSON.parse(extractJson(raw));
 
   const updated = await pool.query(
     `UPDATE meals SET dish_name = $1, calories = $2, protein_g = $3, carbs_g = $4, fiber_g = $5,
@@ -249,7 +259,7 @@ Formato JSON:
 ]`;
 
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
-  return JSON.parse(raw);
+  return JSON.parse(extractJson(raw));
 }
 
 export async function suggestCuisines() {
@@ -267,5 +277,5 @@ Responde ÚNICAMENTE un JSON array de strings con 3 a 5 cocinas.
 Ejemplo: ["Mexicana", "Japonesa", "Mediterránea"]`;
 
   const raw = await ollamaService.chat("¿Qué cocinas me recomiendas?", systemPrompt);
-  return JSON.parse(raw);
+  return JSON.parse(extractJson(raw));
 }

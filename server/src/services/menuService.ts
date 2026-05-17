@@ -11,6 +11,12 @@ export async function generateMenu(params: {
 }) {
   const config = await getConfig();
 
+  const mealTypes = config.meal_pattern === "3_comidas"
+    ? "desayuno, comida, cena"
+    : config.meal_pattern === "4_comidas"
+    ? "desayuno, almuerzo, comida, cena"
+    : "desayuno, almuerzo, comida, merienda, cena";
+
   const systemPrompt = `Eres un chef nutricionista especializado en menús personalizados.
 RESPONDES ÚNICAMENTE con JSON válido, sin texto adicional.
 RESPONDES EN ESPAÑOL. Todos los nombres de platillos, ingredientes y pasos deben estar en español.
@@ -29,11 +35,14 @@ Datos del usuario:
 Reglas:
 - NO repetir platillos en la misma semana
 - Incluir porciones, ingredientes con cantidades, y pasos de receta
-- Cada día debe tener: desayuno, comida, cena${config.meal_pattern === "4_comidas" ? ", almuerzo" : ""}${config.meal_pattern === "5_comidas" ? ", almuerzo y merienda" : ""}${config.include_snacks ? " más 1 snack" : ""}`;
+- CADA DÍA debe incluir EXACTAMENTE TODAS estas comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack" : ""}
+- No omitas ninguna comida. Cada día debe tener ${config.meal_pattern === "3_comidas" ? "3 comidas" : config.meal_pattern === "4_comidas" ? "4 comidas" : "5 comidas"}${config.include_snacks ? " más 1 snack" : ""}`;
 
   const userPrompt = `Genera un menú semanal de Lunes a Domingo.
+CADA DÍA debe incluir TODAS las comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack por día" : ""}.
+NO omitas ninguna comida. Debes generar un platillo diferente para cada tipo de comida cada día.
 
-Formato JSON:
+Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada día):
 {
   "days": [
     {
@@ -49,12 +58,36 @@ Formato JSON:
           "portions": "1 porción",
           "ingredients": [{"name": "...", "amount": 100, "unit": "g"}],
           "recipe_steps": ["Paso 1...", "Paso 2..."]
+        },
+        {
+          "type": "comida",
+          "dish_name": "...",
+          "calories": 500,
+          "protein_g": 30,
+          "carbs_g": 50,
+          "fiber_g": 8,
+          "portions": "1 plato",
+          "ingredients": [{"name": "...", "amount": 200, "unit": "g"}],
+          "recipe_steps": ["Paso 1...", "Paso 2..."]
+        },
+        {
+          "type": "cena",
+          "dish_name": "...",
+          "calories": 350,
+          "protein_g": 25,
+          "carbs_g": 30,
+          "fiber_g": 6,
+          "portions": "1 porción",
+          "ingredients": [{"name": "...", "amount": 150, "unit": "g"}],
+          "recipe_steps": ["Paso 1...", "Paso 2..."]
         }
       ],
       "snacks": []
     }
   ]
-}`;
+}
+
+IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TODAS sus comidas. No repitas platillos en la misma semana.`;
 
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
   const parsed = JSON.parse(raw);

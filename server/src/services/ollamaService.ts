@@ -1,6 +1,6 @@
 class OllamaService {
   private baseUrl = process.env.OLLAMA_URL || "http://localhost:11434";
-  private model = process.env.OLLAMA_MODEL || "qwen2.5:7b";
+  private model = process.env.OLLAMA_MODEL || "qwen2.5:3b";
 
   async chat(prompt: string, systemPrompt: string): Promise<string> {
     const url = `${this.baseUrl}/api/chat`;

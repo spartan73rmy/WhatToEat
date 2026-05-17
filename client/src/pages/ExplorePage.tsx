@@ -9,10 +9,12 @@ import AddToMenuModal from "../components/menus/AddToMenuModal";
 export default function ExplorePage() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useExplore();
   const { menus } = useMenus();
-  const { addFavorite } = useFavorites();
+  const { favorites, addFavorite } = useFavorites();
   const [addDish, setAddDish] = useState<any>(null);
+  const addingFav = useRef(false);
 
   const dishes = data?.pages.flatMap((page) => page) || [];
+  const favoriteNames = new Set((favorites || []).map((f: any) => f.dish_name));
 
   const observer = useRef<IntersectionObserver>();
   const lastRef = useCallback(
@@ -35,6 +37,18 @@ export default function ExplorePage() {
     }
   };
 
+  const handleFavorite = async (dish: any) => {
+    if (addingFav.current) return;
+    addingFav.current = true;
+    try {
+      await addFavorite(dish);
+    } catch (err) {
+      console.error("Error adding favorite:", err);
+    } finally {
+      addingFav.current = false;
+    }
+  };
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-2">Explorar Platillos</h1>
@@ -46,8 +60,9 @@ export default function ExplorePage() {
         <>
           <ExploreGrid
             dishes={dishes}
+            favoriteNames={favoriteNames}
             onAdd={(dish) => setAddDish(dish)}
-            onFavorite={(dish) => addFavorite(dish)}
+            onFavorite={handleFavorite}
           />
           <div ref={lastRef} className="py-8 text-center text-sm text-gray-400">
             {isFetchingNextPage

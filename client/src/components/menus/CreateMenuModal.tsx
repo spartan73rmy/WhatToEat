@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { X } from "lucide-react";
 import { menuApi } from "../../api/configApi";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +23,7 @@ export default function CreateMenuModal({ open, onClose }: CreateMenuModalProps)
   const [difficulty, setDifficulty] = useState("media");
   const [pantry, setPantry] = useState("");
   const [generating, setGenerating] = useState(false);
+  const generatingRef = useRef(false);
 
   if (!open) return null;
 
@@ -33,6 +34,8 @@ export default function CreateMenuModal({ open, onClose }: CreateMenuModalProps)
   };
 
   const handleGenerate = async () => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setGenerating(true);
     try {
       await menuApi.generate({
@@ -52,6 +55,7 @@ export default function CreateMenuModal({ open, onClose }: CreateMenuModalProps)
       console.error("Error generating menu:", err);
     } finally {
       setGenerating(false);
+      generatingRef.current = false;
     }
   };
 

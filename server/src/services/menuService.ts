@@ -27,6 +27,16 @@ export async function generateMenu(params: {
     ? "desayuno, almuerzo, comida, cena"
     : "desayuno, almuerzo, comida, merienda, cena";
 
+  const intensities = [
+    ["desayuno", config.breakfast_intensity],
+    ["almuerzo", config.almuerzo_intensity],
+    ["comida", config.comida_intensity],
+    ["merienda", config.merienda_intensity],
+    ["cena", config.cena_intensity],
+  ].filter(([type]) => mealTypes.includes(type as string))
+   .map(([type, intensity]) => `  - ${type}: ${intensity}`)
+   .join("\n");
+
   const systemPrompt = `Eres un chef nutricionista especializado en menús personalizados.
 RESPONDES ÚNICAMENTE con JSON válido, sin texto adicional.
 RESPONDES EN ESPAÑOL. Todos los nombres de platillos, ingredientes y pasos deben estar en español.
@@ -36,24 +46,31 @@ Datos del usuario:
 - Estilo de vida: ${config.activity}
 - Objetivo: ${config.goal} con déficit calórico de ${config.calorie_deficit} kcal/día
 - Límite calórico diario: ${config.calorie_limit} kcal
-- Distribución: ${config.meal_pattern}
-- Snacks entre comidas: ${config.include_snacks ? "Sí" : "No"}
+- Distribución: ${config.meal_pattern}${config.include_snacks ? " con snacks" : ""}
 - Cocinas: ${(params.cuisines || config.default_cuisines || []).join(", ") || "variadas"}
 - Dificultad: ${params.difficulty || "media"}
 - Balance: Proteína ~25% | Carbohidratos ~50% | Fibra ~25%${params.pantry?.length ? `\n- Ingredientes disponibles: ${params.pantry.join(", ")}` : ""}
+
+Intensidad de cada comida (define el tamaño de la porción y calorías):
+${intensities}
 
 Reglas:
 - NO repetir platillos en la misma semana
 - Incluir porciones, ingredientes con cantidades, y pasos de receta
 - CADA DÍA debe incluir EXACTAMENTE TODAS estas comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack" : ""}
-- No omitas ninguna comida. Cada día debe tener ${config.meal_pattern === "3_comidas" ? "3 comidas" : config.meal_pattern === "4_comidas" ? "4 comidas" : "5 comidas"}${config.include_snacks ? " más 1 snack" : ""}`;
+- RESPETA el límite calórico diario de ${config.calorie_limit} kcal: la suma de TODAS las comidas del día NO debe exceder este límite
+- Distribuye las calorías según la intensidad: "ligero" = pocas calorías, "normal" = moderado, "sustancioso" = muchas calorías
+- La suma total del día debe acercarse lo más posible a ${config.calorie_limit} kcal sin pasarse`;
 
   const userPrompt = `Genera un menú semanal de Lunes a Domingo.
 CADA DÍA debe incluir TODAS las comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack por día" : ""}.
 NO omitas ninguna comida. Debes generar un platillo diferente para cada tipo de comida cada día.
+RESPETA el límite calórico de ${config.calorie_limit} kcal por día. La suma de calorías de desayuno + almuerzo + comida + merienda + cena + snacks NO debe pasar de ${config.calorie_limit}.
+Además, estima el costo total del menú semanal en México: elige UNA de estas categorías: "barato", "medio", "caro", "muy_caro".
 
 Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada día):
 {
+  "price_category": "medio",
   "days": [
     {
       "day": "Lunes",
@@ -102,15 +119,18 @@ IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TO
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
   const parsed = JSON.parse(extractJson(raw));
 
+  const priceCategory = parsed.price_category || "medio";
+
   const menuRes = await pool.query(
-    `INSERT INTO weekly_menus (name, config_snapshot, cuisine_overrides, difficulty, pantry)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    `INSERT INTO weekly_menus (name, config_snapshot, cuisine_overrides, difficulty, pantry, price_category)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [
       params.name,
       JSON.stringify(config),
       params.cuisines || config.default_cuisines,
       params.difficulty || "media",
       params.pantry || [],
+      priceCategory,
     ]
   );
   const menu = menuRes.rows[0];
@@ -240,9 +260,9 @@ Basado en este perfil: ${JSON.stringify(config)}
 
 Genera 10 platillos variados que este usuario podría disfrutar.
 NO incluyas estos platillos ya mostrados anteriormente: ${(params.excludeDishes || []).join(", ")}
-Cada platillo debe ser único.`;
+Cada platillo debe ser único e incluir ingredientes detallados y pasos de receta completos.`;
 
-  const userPrompt = `Genera 10 platillos variados.
+  const userPrompt = `Genera 10 platillos variados. Incluye la dificultad de cada platillo.
 
 Formato JSON:
 [
@@ -253,8 +273,10 @@ Formato JSON:
     "protein_g": 20,
     "carbs_g": 30,
     "fiber_g": 5,
+    "difficulty": "facil",
+    "portions": "1 porción",
     "ingredients": [{"name": "...", "amount": 100, "unit": "g"}],
-    "recipe_steps": ["Paso 1..."]
+    "recipe_steps": ["Paso 1...", "Paso 2..."]
   }
 ]`;
 

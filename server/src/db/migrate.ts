@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS favorite_dishes (
 );
 
 INSERT INTO user_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE weekly_menus ADD COLUMN IF NOT EXISTS price_category TEXT;
 `;
 
 async function migrate() {

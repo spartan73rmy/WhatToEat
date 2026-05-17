@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import ProfileForm from "../components/config/ProfileForm";
 import MealDistributionPicker from "../components/config/MealDistributionPicker";
 import IntensitySelector from "../components/config/IntensitySelector";
@@ -14,6 +15,7 @@ const cuisinesList = [
 ];
 
 export default function ConfigPage() {
+  const queryClient = useQueryClient();
   const { config, updateConfig } = useConfig();
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState("");
@@ -35,11 +37,14 @@ export default function ConfigPage() {
     setSuggestError("");
     try {
       const cuisines = await configApi.suggestCuisines();
-      if (Array.isArray(cuisines) && cuisines.length > 0) {
-        updateConfig({ default_cuisines: cuisines });
+      if (!Array.isArray(cuisines) || cuisines.length === 0) {
+        setSuggestError("La IA no devolvió cocinas válidas. Intenta de nuevo.");
+        return;
       }
-    } catch (err) {
-      setSuggestError("No se pudieron sugerir cocinas. Verifica que Ollama esté corriendo.");
+      await configApi.update({ default_cuisines: cuisines });
+      queryClient.invalidateQueries({ queryKey: ["config"] });
+    } catch (err: any) {
+      setSuggestError(err?.message || "Error al sugerir cocinas. Verifica que Ollama esté corriendo.");
       console.error("Error suggesting cuisines:", err);
     } finally {
       setSuggesting(false);

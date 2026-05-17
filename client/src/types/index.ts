@@ -22,6 +22,7 @@ export interface WeeklyMenu {
   cuisine_overrides: string[];
   difficulty: string;
   pantry: string[];
+  price_category?: string;
   created_at: string;
   meals?: Meal[];
 }

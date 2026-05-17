@@ -13,6 +13,13 @@ router.get("/", async (_req, res) => {
 
 router.post("/", async (req, res) => {
   const parsed = favoriteSchema.parse(req.body);
+  const existing = await pool.query(
+    "SELECT id FROM favorite_dishes WHERE dish_name = $1 LIMIT 1",
+    [parsed.dish_name]
+  );
+  if (existing.rows[0]) {
+    return res.json(existing.rows[0]);
+  }
   const result = await pool.query(
     `INSERT INTO favorite_dishes (dish_name, cuisine, meal_type, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,

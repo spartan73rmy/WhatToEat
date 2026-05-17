@@ -32,6 +32,12 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     res.status(400).json({ error: "JSON inválido" });
   } else if (err instanceof Error && "issues" in err) {
     res.status(400).json({ error: "Datos inválidos", details: (err as any).issues });
+  } else if (err instanceof Error && err.message?.includes("Ollama")) {
+    res.status(503).json({ error: err.message });
+  } else if (err instanceof Error && (err.message?.includes("relation") || err.message?.includes("does not exist"))) {
+    res.status(500).json({ error: "Error de base de datos. ¿Ejecutaste 'npm run migrate'?" });
+  } else if (err instanceof Error) {
+    res.status(500).json({ error: err.message || "Error interno del servidor" });
   } else {
     res.status(500).json({ error: "Error interno del servidor" });
   }

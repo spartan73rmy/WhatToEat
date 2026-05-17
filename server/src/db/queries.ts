@@ -2,7 +2,10 @@ import pool from "./pool";
 
 export async function getConfig() {
   const res = await pool.query("SELECT * FROM user_config WHERE id = 1");
-  return res.rows[0] || null;
+  if (res.rows[0]) return res.rows[0];
+  await pool.query("INSERT INTO user_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING");
+  const inserted = await pool.query("SELECT * FROM user_config WHERE id = 1");
+  return inserted.rows[0] || null;
 }
 
 export async function updateConfig(data: Record<string, unknown>) {

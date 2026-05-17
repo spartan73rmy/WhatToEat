@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 import ProfileForm from "../components/config/ProfileForm";
 import MealDistributionPicker from "../components/config/MealDistributionPicker";
 import IntensitySelector from "../components/config/IntensitySelector";
 import CalorieSlider from "../components/config/CalorieSlider";
 import { useConfig } from "../hooks/useConfig";
+import { configApi } from "../api/configApi";
 
 const cuisinesList = [
   "Japonesa", "Mexicana", "Italiana", "Mediterránea",
@@ -15,6 +16,7 @@ const cuisinesList = [
 export default function ConfigPage() {
   const { config, updateConfig } = useConfig();
   const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState("");
 
   if (!config) {
     return <div className="text-center py-12 text-gray-400">Cargando configuración...</div>;
@@ -26,6 +28,22 @@ export default function ConfigPage() {
       ? current.filter((c: string) => c !== cuisine)
       : [...current, cuisine];
     updateConfig({ default_cuisines: next });
+  };
+
+  const handleSuggest = async () => {
+    setSuggesting(true);
+    setSuggestError("");
+    try {
+      const cuisines = await configApi.suggestCuisines();
+      if (Array.isArray(cuisines) && cuisines.length > 0) {
+        updateConfig({ default_cuisines: cuisines });
+      }
+    } catch (err) {
+      setSuggestError("No se pudieron sugerir cocinas. Verifica que Ollama esté corriendo.");
+      console.error("Error suggesting cuisines:", err);
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   return (
@@ -57,16 +75,15 @@ export default function ConfigPage() {
           })}
         </div>
         <button
-          onClick={() => setSuggesting(true)}
-          className="flex items-center gap-2 text-sm text-amber-700 hover:text-amber-800"
+          onClick={handleSuggest}
+          disabled={suggesting}
+          className="flex items-center gap-2 text-sm text-amber-700 hover:text-amber-800 disabled:opacity-50"
         >
-          <Sparkles size={16} />
-          Sugerir cocinas con IA
+          {suggesting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+          {suggesting ? "Sugiriendo..." : "Sugerir cocinas con IA"}
         </button>
-        {suggesting && (
-          <p className="text-xs text-gray-400 mt-2">
-            Función de IA próximamente...
-          </p>
+        {suggestError && (
+          <p className="text-xs text-red-500 mt-2">{suggestError}</p>
         )}
       </div>
 

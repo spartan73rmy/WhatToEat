@@ -20,6 +20,8 @@ export const configApi = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+  suggestCuisines: () =>
+    request<string[]>("/ai/suggest-cuisines", { method: "POST" }),
 };
 
 export const menuApi = {

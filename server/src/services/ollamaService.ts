@@ -26,6 +26,74 @@ class OllamaService {
     const data = await res.json() as { message: { content: string } };
     return data.message.content;
   }
+
+  async *chatStream(
+    prompt: string,
+    systemPrompt: string,
+    signal?: AbortSignal
+  ): AsyncGenerator<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new DOMException("Tiempo de espera agotado", "TimeoutError")),
+      600_000
+    );
+
+    if (signal) {
+      signal.addEventListener("abort", () => controller.abort(signal.reason));
+    }
+
+    try {
+      const url = `${this.baseUrl}/api/chat`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          stream: true,
+          options: { temperature: 0.7 },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Ollama error: ${res.status} ${res.statusText}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No se pudo leer el stream de Ollama");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.message?.content) {
+              yield parsed.message.content;
+            }
+            if (parsed.done) break;
+          } catch {
+            // skip malformed NDJSON lines
+          }
+        }
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export const ollamaService = new OllamaService();

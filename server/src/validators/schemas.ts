@@ -21,6 +21,7 @@ export const generateMenuSchema = z.object({
   name: z.string().min(1),
   cuisines: z.array(z.string()).optional(),
   difficulty: z.enum(["facil", "media", "dificil"]).optional(),
+  cost: z.enum(["barato", "medio", "caro", "muy_caro"]).optional(),
   pantry: z.array(z.string()).optional(),
   profileOverrides: updateConfigSchema.partial().optional(),
 });
@@ -36,6 +37,10 @@ export const swapMealSchema = z.object({
 export const exploreSchema = z.object({
   page: z.number().int().min(1).default(1),
   excludeDishes: z.array(z.string()).default([]),
+  meal_type: z.string().optional(),
+  difficulty: z.string().optional(),
+  cost: z.string().optional(),
+  craving: z.string().optional(),
 });
 
 export const addToMenuSchema = z.object({

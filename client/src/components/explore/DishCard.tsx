@@ -25,6 +25,14 @@ const difficultyColors: Record<string, string> = {
   dificil: "bg-red-100 text-red-700",
 };
 
+const mealIcons: Record<string, string> = {
+  desayuno: "🌅",
+  almuerzo: "🥪",
+  comida: "🍽️",
+  merienda: "🍪",
+  cena: "🌙",
+};
+
 export default function DishCard({ dish, onAdd, onFavorite, favorited }: DishCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -44,7 +52,7 @@ export default function DishCard({ dish, onAdd, onFavorite, favorited }: DishCar
         </div>
         <div className="flex gap-1.5 mb-3 flex-wrap">
           <span className="inline-block text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-            {dish.meal_type}
+            {mealIcons[dish.meal_type] || ""} {dish.meal_type}
           </span>
           {dish.difficulty && (
             <span className={`inline-block text-xs px-2 py-0.5 rounded ${difficultyColors[dish.difficulty] || "bg-gray-100"}`}>

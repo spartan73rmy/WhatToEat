@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS favorite_dishes (
 INSERT INTO user_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 ALTER TABLE weekly_menus ADD COLUMN IF NOT EXISTS price_category TEXT;
+ALTER TABLE meals ADD COLUMN IF NOT EXISTS price DECIMAL(10,2);
 `;
 
 async function migrate() {

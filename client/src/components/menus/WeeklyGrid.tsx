@@ -5,18 +5,19 @@ interface WeeklyGridProps {
   meals: any[];
   dayIndex: number;
   onSwap: (dayIndex: number, mealType: string) => void;
-  onRate: (mealId: number, rating: number) => void;
+  onFavorite?: (meal: any) => void;
+  favoriteNames?: Set<string>;
   onEdit: (meal: any) => void;
 }
 
 const dayLabels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const mealOrder = ["desayuno", "almuerzo", "comida", "merienda", "cena"];
 
-export default function WeeklyGrid({ meals, dayIndex, onSwap, onRate }: WeeklyGridProps) {
+export default function WeeklyGrid({ meals, dayIndex, onSwap, onFavorite, favoriteNames }: WeeklyGridProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const dayMeals = meals.filter((m: any) => m.day_index === dayIndex);
-  const snacks = dayMeals.filter((m: any) => m.is_snack);
-  const regular = dayMeals.filter((m: any) => !m.is_snack);
+  const snacks = dayMeals.filter((m: any) => m.is_snack || m.meal_type === "snack");
+  const regular = dayMeals.filter((m: any) => !(m.is_snack || m.meal_type === "snack"));
 
   const sorted = [...mealOrder].map(
     (type) => regular.find((m: any) => m.meal_type === type)
@@ -31,7 +32,8 @@ export default function WeeklyGrid({ meals, dayIndex, onSwap, onRate }: WeeklyGr
             key={meal.id}
             meal={meal}
             onSwap={onSwap}
-            onRate={onRate}
+            onFavorite={onFavorite}
+            favorited={favoriteNames?.has(meal.dish_name)}
             expanded={expanded === meal.id}
             onToggle={() => setExpanded(expanded === meal.id ? null : meal.id)}
           />
@@ -42,7 +44,7 @@ export default function WeeklyGrid({ meals, dayIndex, onSwap, onRate }: WeeklyGr
             <div className="flex flex-wrap gap-2">
               {snacks.map((s: any) => (
                 <span key={s.id} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded">
-                  {s.dish_name} ({s.calories} kcal)
+                  {s.dish_name} (🔥 {s.calories} kcal)
                 </span>
               ))}
             </div>

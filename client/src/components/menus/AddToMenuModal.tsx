@@ -32,7 +32,7 @@ export default function AddToMenuModal({ open, onClose, dish, menus, onAdd }: Ad
           </button>
         </div>
 
-        <p className="text-sm font-medium mb-4">{dish.dish_name} — {dish.calories} kcal</p>
+        <p className="text-sm font-medium mb-4">{dish.dish_name} — 🔥 {dish.calories} kcal</p>
 
         <div className="space-y-3">
           <div>

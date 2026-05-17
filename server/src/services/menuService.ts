@@ -12,10 +12,11 @@ function extractJson(raw: string): string {
   return raw.slice(start, end + 1);
 }
 
-export async function generateMenu(params: {
+async function buildMenuPrompts(params: {
   name: string;
   cuisines?: string[];
   difficulty?: string;
+  cost?: string;
   pantry?: string[];
   profileOverrides?: Record<string, unknown>;
 }) {
@@ -49,7 +50,8 @@ Datos del usuario:
 - Distribución: ${config.meal_pattern}${config.include_snacks ? " con snacks" : ""}
 - Cocinas: ${(params.cuisines || config.default_cuisines || []).join(", ") || "variadas"}
 - Dificultad: ${params.difficulty || "media"}
-- Balance: Proteína ~25% | Carbohidratos ~50% | Fibra ~25%${params.pantry?.length ? `\n- Ingredientes disponibles: ${params.pantry.join(", ")}` : ""}
+- Costo del menú: ${params.cost || "medio"}
+- Balance: Proteína ~25% | Carbohidratos ~50% | Fibra ~25%${params.pantry?.length ? `\n- Ingredientes en despensa (DISTRIBUYE a lo largo de la semana, NO los uses todos en cada día, repártelos entre distintos días): ${params.pantry.join(", ")}` : ""}
 
 Intensidad de cada comida (define el tamaño de la porción y calorías):
 ${intensities}
@@ -61,7 +63,8 @@ Reglas:
 - RESPETA el límite calórico diario de ${config.calorie_limit} kcal: la suma de TODAS las comidas del día NO debe exceder este límite
 - Los pasos de receta deben ser COMPLETOS y DESCRIPTIVOS: incluir temperaturas, tiempos de cocción, técnicas culinarias (ej. "sofríe la cebolla a fuego medio por 5 minutos hasta que esté transparente", "hornea a 180°C por 25 minutos", "deja reposar 10 minutos antes de servir"). NO uses pasos genéricos como "cocinar" o "preparar" sin detalles.
 - Distribuye las calorías según la intensidad: "ligero" = pocas calorías, "normal" = moderado, "sustancioso" = muchas calorías
-- La suma total del día debe acercarse lo más posible a ${config.calorie_limit} kcal sin pasarse`;
+- La suma total del día debe acercarse lo más posible a ${config.calorie_limit} kcal sin pasarse
+- Cada platillo debe incluir un precio estimado en pesos mexicanos (MXN). Para costo "${params.cost || "medio"}", asigna precios acordes: barato=$50-100, medio=$100-200, caro=$200-350, muy_caro=$350-600 por platillo`;
 
   const userPrompt = `Genera un menú semanal de Lunes a Domingo.
 CADA DÍA debe incluir TODAS las comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack por día" : ""}.
@@ -85,6 +88,7 @@ Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada d�
           "fiber_g": 5,
           "portions": "1 porción",
           "ingredients": [{"name": "...", "amount": 100, "unit": "g"}],
+          "price": 150.00,
           "recipe_steps": ["Paso 1...", "Paso 2..."]
         },
         {
@@ -96,6 +100,7 @@ Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada d�
           "fiber_g": 8,
           "portions": "1 plato",
           "ingredients": [{"name": "...", "amount": 200, "unit": "g"}],
+          "price": 180.00,
           "recipe_steps": ["Paso 1...", "Paso 2..."]
         },
         {
@@ -107,6 +112,7 @@ Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada d�
           "fiber_g": 6,
           "portions": "1 porción",
           "ingredients": [{"name": "...", "amount": 150, "unit": "g"}],
+          "price": 120.00,
           "recipe_steps": ["Paso 1...", "Paso 2..."]
         }
       ],
@@ -117,10 +123,31 @@ Formato JSON (sigue EXACTAMENTE esta estructura con TODAS las comidas en cada d�
 
 IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TODAS sus comidas. No repitas platillos en la misma semana.`;
 
+  return { config, systemPrompt, userPrompt };
+}
+
+export async function generateMenu(params: {
+  name: string;
+  cuisines?: string[];
+  difficulty?: string;
+  cost?: string;
+  pantry?: string[];
+  profileOverrides?: Record<string, unknown>;
+}) {
+  const { config, systemPrompt, userPrompt } = await buildMenuPrompts(params);
+
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
   const parsed = JSON.parse(extractJson(raw));
 
-  const priceCategory = parsed.price_category || "medio";
+  return saveMenuToDb(params, config, parsed);
+}
+
+async function saveMenuToDb(
+  params: { name: string; cuisines?: string[]; difficulty?: string; cost?: string; pantry?: string[] },
+  config: any,
+  parsed: any,
+) {
+  const priceCategory = parsed.price_category || params.cost || "medio";
 
   const menuRes = await pool.query(
     `INSERT INTO weekly_menus (name, config_snapshot, cuisine_overrides, difficulty, pantry, price_category)
@@ -142,8 +169,8 @@ IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TO
 
     for (const meal of day.meals) {
       await pool.query(
-        `INSERT INTO meals (menu_id, day_index, meal_type, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO meals (menu_id, day_index, meal_type, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps, price)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           menu.id,
           dayIndex,
@@ -156,14 +183,15 @@ IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TO
           meal.portions,
           JSON.stringify(meal.ingredients || []),
           meal.recipe_steps || [],
+          meal.price || null,
         ]
       );
     }
 
     for (const snack of day.snacks || []) {
       await pool.query(
-        `INSERT INTO meals (menu_id, day_index, meal_type, is_snack, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps)
-         VALUES ($1, $2, 'snack', TRUE, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        `INSERT INTO meals (menu_id, day_index, meal_type, is_snack, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps, price)
+         VALUES ($1, $2, 'snack', TRUE, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           menu.id,
           dayIndex,
@@ -175,6 +203,7 @@ IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TO
           snack.portions || "1 porción",
           JSON.stringify(snack.ingredients || []),
           snack.recipe_steps || [],
+          snack.price || null,
         ]
       );
     }
@@ -182,6 +211,249 @@ IMPORTANTE: Debes generar TODOS los 7 días (Lunes a Domingo) y cada día con TO
 
   const mealsRes = await pool.query("SELECT * FROM meals WHERE menu_id = $1 ORDER BY day_index, meal_type", [menu.id]);
   return { ...menu, meals: mealsRes.rows };
+}
+
+export async function* generateMenuStream(params: {
+  name: string;
+  cuisines?: string[];
+  difficulty?: string;
+  cost?: string;
+  pantry?: string[];
+  profileOverrides?: Record<string, unknown>;
+}, signal?: AbortSignal): AsyncGenerator<{ type: string; content?: string; data?: any; day?: number; total?: number; dayName?: string; status?: string; error?: string }> {
+  const config = await getConfig();
+  const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+  const mealTypes = config.meal_pattern === "3_comidas"
+    ? "desayuno, comida, cena"
+    : config.meal_pattern === "4_comidas"
+    ? "desayuno, almuerzo, comida, cena"
+    : "desayuno, almuerzo, comida, merienda, cena";
+
+  const intensities = [
+    ["desayuno", config.breakfast_intensity],
+    ["almuerzo", config.almuerzo_intensity],
+    ["comida", config.comida_intensity],
+    ["merienda", config.merienda_intensity],
+    ["cena", config.cena_intensity],
+  ].filter(([type]) => mealTypes.includes(type as string))
+   .map(([type, intensity]) => `  - ${type}: ${intensity}`)
+   .join("\n");
+
+  const mealTypesList = mealTypes.split(", ");
+
+  const systemPrompt = `Eres un chef nutricionista especializado en menús personalizados.
+RESPONDES ÚNICAMENTE con JSON válido, sin texto adicional.
+RESPONDES EN ESPAÑOL. Todos los nombres de platillos, ingredientes y pasos deben estar en español.
+
+Datos del usuario:
+- Edad: ${config.age}, Género: ${config.gender}
+- Estilo de vida: ${config.activity}
+- Objetivo: ${config.goal} con déficit calórico de ${config.calorie_deficit} kcal/día
+- Límite calórico diario: ${config.calorie_limit} kcal
+- Distribución: ${config.meal_pattern}${config.include_snacks ? " con snacks" : ""}
+- Cocinas: ${(params.cuisines || config.default_cuisines || []).join(", ") || "variadas"}
+- Dificultad: ${params.difficulty || "media"}
+- Costo del menú: ${params.cost || "medio"}
+- Balance: Proteína ~25% | Carbohidratos ~50% | Fibra ~25%${params.pantry?.length ? `\n- Ingredientes en despensa (DISTRIBUYE a lo largo de la semana, NO los uses todos en cada día, repártelos entre distintos días): ${params.pantry.join(", ")}` : ""}
+
+Intensidad de cada comida (define el tamaño de la porción y calorías):
+${intensities}
+
+Reglas:
+- Incluir porciones, ingredientes con cantidades, y pasos de receta DETALLADOS
+- RESPETA el límite calórico diario de ${config.calorie_limit} kcal: la suma de TODAS las comidas del día NO debe exceder este límite
+- Los pasos de receta deben ser COMPLETOS y DESCRIPTIVOS: incluir temperaturas, tiempos de cocción, técnicas culinarias (ej. "sofríe la cebolla a fuego medio por 5 minutos hasta que esté transparente", "hornea a 180°C por 25 minutos", "deja reposar 10 minutos antes de servir"). NO uses pasos genéricos como "cocinar" o "preparar" sin detalles.
+- Distribuye las calorías según la intensidad: "ligero" = pocas calorías, "normal" = moderado, "sustancioso" = muchas calorías
+- La suma total del día debe acercarse lo más posible a ${config.calorie_limit} kcal sin pasarse
+- Cada platillo debe incluir un precio estimado en pesos mexicanos (MXN). Para costo "${params.cost || "medio"}", asigna precios acordes: barato=$50-100, medio=$100-200, caro=$200-350, muy_caro=$350-600 por platillo`;
+
+  // Create the menu first (empty)
+  const menuRes = await pool.query(
+    `INSERT INTO weekly_menus (name, config_snapshot, cuisine_overrides, difficulty, pantry, price_category)
+     VALUES ($1, $2, $3, $4, $5, 'medio') RETURNING *`,
+    [
+      params.name,
+      JSON.stringify(config),
+      params.cuisines || config.default_cuisines,
+      params.difficulty || "media",
+      params.pantry || [],
+    ]
+  );
+  const menu = menuRes.rows[0];
+
+  yield { type: "start", total: 7 };
+
+  let allDishNames: string[] = [];
+  let usedIngredients: string[] = [];
+  let usedPantry: string[] = [];
+  let priceCategory = "medio";
+
+  for (let dayIdx = 0; dayIdx < dayNames.length; dayIdx++) {
+    const dayName = dayNames[dayIdx];
+    const isLastDay = dayIdx === dayNames.length - 1;
+
+    yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "generating" };
+
+    const pantryRemaining = params.pantry?.filter(p =>
+      !usedPantry.some(u => u.toLowerCase() === p.toLowerCase())
+    ) || [];
+    const usedPantryText = usedPantry.length > 0
+      ? `\nIngredientes de despensa YA USADOS: ${[...new Set(usedPantry)].join(", ")}`
+      : "";
+    const pantryRemainingText = pantryRemaining.length > 0
+      ? `\nIngredientes de despensa AÚN DISPONIBLES: ${pantryRemaining.join(", ")} (distribuye estos en los días que quedan)`
+      : "";
+    const avoidIngText = usedIngredients.length > 0
+      ? `\n\nIngredientes YA USADOS en recetas de días anteriores (no los repitas en exceso, distribuye equitativamente):\n${[...new Set(usedIngredients)].map(i => `  - ${i}`).join("\n")}`
+      : "";
+
+    const userPrompt = `Genera el menú para el día ${dayName}.${isLastDay ? " ES EL ÚLTIMO DÍA, debes generar platillos COMPLETOS con nombre incluido, no los dejes vacíos." : ""}
+Este día debe incluir estas comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack" : ""}.
+Límite calórico: ${config.calorie_limit} kcal para todo el día.
+
+Platillos YA USADOS en días anteriores (NO los repitas):
+${allDishNames.map(d => `  - ${d}`).join("\n")}${usedPantryText}${pantryRemainingText}${avoidIngText}
+
+${dayIdx === 0 ? 'Además, estima el costo total del menú semanal en México: elige UNA de estas categorías: "barato", "medio", "caro", "muy_caro". Inclúyela como "price_category" en el JSON.' : ''}
+
+Formato JSON (solo este día, NO incluyas otros días):
+{
+  ${dayIdx === 0 ? '"price_category": "medio",' : ''}
+  "meals": [
+    {
+      "type": "${mealTypesList[0]}",
+      "dish_name": "...",
+      "calories": 300,
+      "protein_g": 15,
+      "carbs_g": 40,
+      "fiber_g": 5,
+      "price": 150.00,
+      "portions": "1 porción",
+      "ingredients": [{"name": "...", "amount": 100, "unit": "g"}],
+      "recipe_steps": ["Paso 1...", "Paso 2..."]
+    }${mealTypesList.slice(1).map(t => `,
+    {
+      "type": "${t}",
+      "dish_name": "...",
+      "calories": 350,
+      "protein_g": 20,
+      "carbs_g": 30,
+      "fiber_g": 5,
+      "price": 150.00,
+      "portions": "1 porción",
+      "ingredients": [{"name": "...", "amount": 100, "unit": "g"}],
+      "recipe_steps": ["Paso 1...", "Paso 2..."]
+    }`).join("")}
+  ],
+  "snacks": []
+}`;
+
+    let fullText = "";
+    try {
+      const stream = ollamaService.chatStream(userPrompt, systemPrompt, signal);
+      for await (const token of stream) {
+        fullText += token;
+        yield { type: "token", content: token };
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError" || err.message?.includes("abort") || err.message?.includes("Timeout")) {
+        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "Generación cancelada o agotó el tiempo" };
+        continue;
+      }
+      yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: err.message };
+      continue;
+    }
+
+    let dayData: any;
+    try {
+      dayData = JSON.parse(extractJson(fullText));
+    } catch (err: any) {
+      yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "La IA generó JSON inválido. Reintentando..." };
+      continue;
+    }
+
+    if (dayIdx === 0 && dayData.price_category) {
+      priceCategory = dayData.price_category;
+      await pool.query("UPDATE weekly_menus SET price_category = $1 WHERE id = $2", [priceCategory, menu.id]);
+    }
+
+    yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "saving" };
+
+    const meals = dayData.meals || [];
+    for (const meal of meals) {
+      const dishName = meal.dish_name?.trim() || `${meal.type}_${dayName}`;
+      const isSnack = meal.type === "snack" || meal.is_snack === true;
+      try {
+        await pool.query(
+          `INSERT INTO meals (menu_id, day_index, meal_type, is_snack, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps, price)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            menu.id,
+            dayIdx,
+            meal.type,
+            isSnack,
+            dishName,
+            meal.calories,
+            meal.protein_g,
+            meal.carbs_g,
+            meal.fiber_g,
+            meal.portions,
+            JSON.stringify(meal.ingredients || []),
+            meal.recipe_steps || [],
+            meal.price || null,
+          ]
+        );
+      } catch (dbErr: any) {
+        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: `Error al guardar "${dishName}": ${dbErr.message}` };
+        continue;
+      }
+    }
+
+    for (const snack of dayData.snacks || []) {
+      try {
+        await pool.query(
+          `INSERT INTO meals (menu_id, day_index, meal_type, is_snack, dish_name, calories, protein_g, carbs_g, fiber_g, portions, ingredients, recipe_steps, price)
+           VALUES ($1, $2, 'snack', TRUE, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            menu.id,
+            dayIdx,
+            snack.dish_name,
+            snack.calories,
+            snack.protein_g || 0,
+            snack.carbs_g || 0,
+            snack.fiber_g || 0,
+            snack.portions || "1 porción",
+            JSON.stringify(snack.ingredients || []),
+            snack.recipe_steps || [],
+            snack.price || null,
+          ]
+        );
+      } catch (dbErr: any) {
+        continue;
+      }
+    }
+
+    const dayDishes = meals.map((m: any) => m.dish_name).filter(Boolean);
+    allDishNames.push(...dayDishes);
+
+    const dayIngs = meals.flatMap((m: any) =>
+      (m.ingredients || []).map((i: any) => i.name).filter(Boolean)
+    );
+    usedIngredients.push(...dayIngs);
+
+    if (params.pantry) {
+      const dayPantry = dayIngs.filter((name: string) =>
+        params.pantry!.some(p => name.toLowerCase().includes(p.toLowerCase()))
+      );
+      usedPantry.push(...dayPantry);
+    }
+
+    yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "done", data: { dishes: dayDishes } };
+  }
+
+  const mealsRes = await pool.query("SELECT * FROM meals WHERE menu_id = $1 ORDER BY day_index, meal_type", [menu.id]);
+  yield { type: "result", data: { ...menu, meals: mealsRes.rows } };
 }
 
 export async function swapMeal(menuId: number, params: {
@@ -251,26 +523,42 @@ Formato JSON:
   return updated.rows[0];
 }
 
-export async function exploreDishes(params: { page: number; excludeDishes: string[] }) {
+export async function exploreDishes(params: {
+  page: number;
+  excludeDishes: string[];
+  meal_type?: string;
+  difficulty?: string;
+  cost?: string;
+  craving?: string;
+}) {
   const config = await getConfig();
+
+  let filters = "";
+  if (params.meal_type) filters += `\n- Tipo de comida: ${params.meal_type} (todos los platillos DEBEN ser de este tipo)`;
+  if (params.difficulty) filters += `\n- Dificultad máxima: ${params.difficulty}`;
+  if (params.cost) filters += `\n- Costo máximo: ${params.cost}`;
+  if (params.craving) filters += `\n- Antojo del usuario: "${params.craving}" (incorpora esta idea en los platillos)`;
 
   const systemPrompt = `Eres un chef creativo. RESPONDES EN ESPAÑOL.
 RESPONDES ÚNICAMENTE con un JSON array de platillos, sin texto adicional.
 
-Basado en este perfil: ${JSON.stringify(config)}
+Basado en este perfil: ${JSON.stringify(config)}${filters}
 
-Genera 10 platillos variados que este usuario podría disfrutar.
+Genera 10 platillos variados que cumplan ESTRICTAMENTE con los filtros indicados arriba.
 NO incluyas estos platillos ya mostrados anteriormente: ${(params.excludeDishes || []).join(", ")}
 Cada platillo debe ser único e incluir ingredientes detallados y pasos de receta COMPLETOS y DESCRIPTIVOS.
 Los pasos deben incluir temperaturas, tiempos de cocción y técnicas culinarias específicas.`;
 
-  const userPrompt = `Genera 10 platillos variados. Incluye la dificultad de cada platillo.
+  const exampleType = params.meal_type || "comida";
+  const userPrompt = `Genera 10 platillos variados que cumplan ESTRICTAMENTE con estos filtros:${filters}
+
+El campo "meal_type" de CADA platillo debe ser "${exampleType}" — no uses otro valor.
 
 Formato JSON:
 [
   {
     "dish_name": "...",
-    "meal_type": "comida",
+    "meal_type": "${exampleType}",
     "calories": 350,
     "protein_g": 20,
     "carbs_g": 30,
@@ -289,7 +577,9 @@ Formato JSON:
 export async function suggestCuisines() {
   const config = await getConfig();
 
-  const systemPrompt = `RESPONDES EN ESPAÑOL.
+  const systemPrompt = `RESPONDES ÚNICAMENTE con un array JSON de cocinas, sin texto adicional.
+RESPONDES EN ESPAÑOL.
+
 Recomienda tipos de cocina ideales para este perfil:
 - ${config.gender}, ${config.age} años, ${config.activity}
 - Objetivo: ${config.goal} con déficit calórico de ${config.calorie_deficit} kcal
@@ -297,9 +587,26 @@ Recomienda tipos de cocina ideales para este perfil:
 - Ingredientes accesibles, platillos bajos en calorías
 - Sabores que satisfacen sin exceder calorías
 
-Responde ÚNICAMENTE un JSON array de strings con 3 a 5 cocinas.
-Ejemplo: ["Mexicana", "Japonesa", "Mediterránea"]`;
+Devuelve entre 3 y 5 cocinas en este formato exacto:
+["Mexicana", "Japonesa", "Mediterránea"]`;
 
-  const raw = await ollamaService.chat("¿Qué cocinas me recomiendas?", systemPrompt);
-  return JSON.parse(extractJson(raw));
+  const raw = await ollamaService.chat("Genera recomendaciones de cocina.", systemPrompt);
+
+  try {
+    const json = extractJson(raw);
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((c): c is string => typeof c === "string");
+    }
+    if (parsed && Array.isArray(parsed.cuisines)) {
+      return parsed.cuisines.filter((c: any): c is string => typeof c === "string");
+    }
+    return [];
+  } catch {
+    const matches = raw.match(/"([^"]+)"/g);
+    if (matches) {
+      return matches.map((m) => m.slice(1, -1)).filter((c, i, a) => a.indexOf(c) === i);
+    }
+    return [];
+  }
 }

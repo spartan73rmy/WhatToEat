@@ -4,10 +4,20 @@ import { useMenus } from "../hooks/useMenus";
 import { useFavorites } from "../hooks/useFavorites";
 import { exploreApi } from "../api/configApi";
 import ExploreGrid from "../components/explore/ExploreGrid";
+import ExploreFilters from "../components/explore/ExploreFilters";
 import AddToMenuModal from "../components/menus/AddToMenuModal";
 
 export default function ExplorePage() {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useExplore();
+  const [mealType, setMealType] = useState("");
+  const [difficulty, setDifficulty] = useState("");
+  const [cost, setCost] = useState("");
+  const [craving, setCraving] = useState("");
+  const [searchKey, setSearchKey] = useState(0);
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, isLoading, cancel } = useExplore(
+    searchKey > 0,
+    searchKey > 0 ? { meal_type: mealType || undefined, difficulty: difficulty || undefined, cost: cost || undefined, craving: craving || undefined } : undefined
+  );
   const { menus } = useMenus();
   const { favorites, addFavorite } = useFavorites();
   const [addDish, setAddDish] = useState<any>(null);
@@ -28,6 +38,14 @@ export default function ExplorePage() {
     },
     [isFetchingNextPage, hasNextPage, fetchNextPage]
   );
+
+  const handleSearch = () => {
+    if (isFetching) {
+      cancel();
+    } else {
+      setSearchKey((k) => k + 1);
+    }
+  };
 
   const handleAddToMenu = async (menuId: number, dayIndex: number, mealType: string) => {
     try {
@@ -54,7 +72,27 @@ export default function ExplorePage() {
       <h1 className="text-2xl font-bold mb-2">Explorar Platillos</h1>
       <p className="text-sm text-gray-500 mb-6">Basado en tu perfil nutricional</p>
 
-      {isLoading ? (
+      <ExploreFilters
+        mealType={mealType}
+        difficulty={difficulty}
+        cost={cost}
+        craving={craving}
+        searching={isFetching}
+        onChange={({ mealType: mt, difficulty: d, cost: co, craving: cr }) => {
+          setMealType(mt);
+          setDifficulty(d);
+          setCost(co);
+          setCraving(cr);
+        }}
+        onSearch={handleSearch}
+      />
+
+      {searchKey === 0 ? (
+        <div className="text-center py-16">
+          <p className="text-gray-400 mb-2">Usa los filtros de arriba para encontrar platillos</p>
+          <p className="text-sm text-gray-400">Selecciona tipo de cocina, dificultad, precio o tu antojo</p>
+        </div>
+      ) : isLoading ? (
         <div className="text-center py-12 text-gray-400">Cargando platillos...</div>
       ) : (
         <>
@@ -69,6 +107,8 @@ export default function ExplorePage() {
               ? "Cargando más platillos..."
               : hasNextPage
               ? "Desplázate para más"
+              : dishes.length === 0
+              ? "No se encontraron platillos con esos filtros"
               : "No hay más platillos"}
           </div>
         </>

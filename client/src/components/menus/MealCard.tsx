@@ -1,5 +1,4 @@
-import { ChefHat, RotateCcw } from "lucide-react";
-import RatingStars from "./RatingStars";
+import { ChefHat, RotateCcw, Heart } from "lucide-react";
 
 interface MealCardProps {
   meal: {
@@ -13,11 +12,13 @@ interface MealCardProps {
     carbs_g: number;
     fiber_g: number;
     user_rating: number | null;
+    price?: number | string;
     ingredients?: { name: string; amount: number; unit: string }[];
     recipe_steps?: string[];
   };
   onSwap: (dayIndex: number, mealType: string) => void;
-  onRate?: (mealId: number, rating: number) => void;
+  onFavorite?: (meal: any) => void;
+  favorited?: boolean;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -30,7 +31,15 @@ const mealColors: Record<string, string> = {
   cena: "border-l-blue-400",
 };
 
-export default function MealCard({ meal, onSwap, onRate, expanded, onToggle }: MealCardProps) {
+const mealIcons: Record<string, string> = {
+  desayuno: "🌅",
+  almuerzo: "🥪",
+  comida: "🍽️",
+  merienda: "🍪",
+  cena: "🌙",
+};
+
+export default function MealCard({ meal, onSwap, onFavorite, favorited, expanded, onToggle }: MealCardProps) {
   const colorClass = mealColors[meal.meal_type] || "border-l-gray-400";
 
   return (
@@ -41,17 +50,34 @@ export default function MealCard({ meal, onSwap, onRate, expanded, onToggle }: M
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">
-              {meal.is_snack ? "🥜 Snack" : meal.meal_type}
+              {meal.is_snack ? "🥜 Snack" : `${mealIcons[meal.meal_type] || ""} ${meal.meal_type}`}
             </p>
             <p className="font-medium text-sm truncate">{meal.dish_name}</p>
           </div>
-          <span className="text-xs font-semibold text-gray-600 whitespace-nowrap ml-2">
-            {meal.calories} kcal
-          </span>
+          <div className="flex items-center gap-2 whitespace-nowrap ml-2">
+            {meal.price && (
+              <span className="text-xs font-semibold text-emerald-600">${Number(meal.price).toFixed(0)}</span>
+            )}
+            <span className="text-xs font-semibold text-gray-600">🔥 {meal.calories} kcal</span>
+          </div>
         </div>
 
         <div className="flex items-center justify-between mt-2">
-          <RatingStars rating={meal.user_rating} onChange={(r) => onRate?.(meal.id, r)} readonly={!onRate} />
+          {onFavorite && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onFavorite(meal);
+              }}
+              className={`flex items-center gap-1 text-xs transition-colors ${
+                favorited ? "text-red-500" : "text-gray-400 hover:text-red-500"
+              }`}
+              title={favorited ? "Quitar de favoritos" : "Agregar a favoritos"}
+            >
+              <Heart size={14} fill={favorited ? "currentColor" : "none"} />
+              {favorited ? "Favorito" : "Favorito"}
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -61,7 +87,7 @@ export default function MealCard({ meal, onSwap, onRate, expanded, onToggle }: M
             title="Reemplazar comida"
           >
             <RotateCcw size={12} />
-            Swap
+            Cambiar
           </button>
         </div>
       </div>

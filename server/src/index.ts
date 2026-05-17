@@ -28,8 +28,10 @@ app.get("/api/health", (_req, res) => {
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("Unhandled error:", err);
-  if (err instanceof SyntaxError) {
-    res.status(400).json({ error: "JSON inválido" });
+  if (err instanceof SyntaxError && "body" in err) {
+    res.status(400).json({ error: "JSON inválido en la solicitud. Verifica que los datos enviados sean correctos." });
+  } else if (err instanceof SyntaxError) {
+    res.status(500).json({ error: `Error de formato: ${err.message}` });
   } else if (err instanceof Error && "issues" in err) {
     res.status(400).json({ error: "Datos inválidos", details: (err as any).issues });
   } else if (err instanceof Error && err.message?.includes("Ollama")) {

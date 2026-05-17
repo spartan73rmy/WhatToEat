@@ -1,19 +1,18 @@
-import { useState } from "react";
 import { Plus } from "lucide-react";
 import MenuCard from "../components/menus/MenuCard";
-import CreateMenuModal from "../components/menus/CreateMenuModal";
 import { useMenus } from "../hooks/useMenus";
 
 export default function MenusPage() {
   const { menus, isLoading, deleteMenu } = useMenus();
-  const [showModal, setShowModal] = useState(false);
+
+  const openModal = () => window.dispatchEvent(new CustomEvent("open-create-menu"));
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Mis Menús</h1>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openModal}
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium"
         >
           <Plus size={18} />
@@ -27,7 +26,7 @@ export default function MenusPage() {
         <div className="text-center py-16">
           <p className="text-gray-400 mb-4">Aún no tienes menús</p>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openModal}
             className="text-amber-600 hover:text-amber-700 text-sm font-medium"
           >
             Crea tu primer menú con IA
@@ -40,8 +39,6 @@ export default function MenusPage() {
           ))}
         </div>
       )}
-
-      <CreateMenuModal open={showModal} onClose={() => setShowModal(false)} />
     </div>
   );
 }

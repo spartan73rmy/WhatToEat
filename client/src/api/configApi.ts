@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+const API_BASE = `${import.meta.env.BASE_URL}api`;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -7,6 +7,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (err.details) console.error("API error details:", err.details);
     throw new Error(err.error || `HTTP ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
@@ -52,10 +53,11 @@ export const menuApi = {
 };
 
 export const exploreApi = {
-  explore: (data: any) =>
+  explore: (data: any, signal?: AbortSignal) =>
     request<any[]>("/explore", {
       method: "POST",
       body: JSON.stringify(data),
+      signal,
     }),
   addToMenu: (data: any) =>
     request<any>("/explore/add-to-menu", {

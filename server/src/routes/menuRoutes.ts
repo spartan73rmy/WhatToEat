@@ -5,7 +5,7 @@ import {
   createMenu,
   deleteMenu,
 } from "../db/queries";
-import { generateMenu, swapMeal } from "../services/menuService";
+import { generateMenu, generateMenuStream, swapMeal } from "../services/menuService";
 import { generateMenuSchema, swapMealSchema } from "../validators/schemas";
 import pool from "../db/pool";
 
@@ -42,6 +42,32 @@ router.post("/generate", async (req, res, next) => {
     res.status(201).json(menu);
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/generate-stream", async (req, res) => {
+  try {
+    const parsed = generateMenuSchema.parse(req.body);
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+
+    for await (const event of generateMenuStream(parsed, controller.signal)) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (event.type === "result") {
+        res.end();
+        return;
+      }
+    }
+    res.end();
+  } catch (err: any) {
+    res.write(`data: ${JSON.stringify({ type: "error", content: err.message })}\n\n`);
+    res.end();
   }
 });
 

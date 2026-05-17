@@ -3,7 +3,8 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMenu } from "../hooks/useMenus";
-import { menuApi } from "../api/configApi";
+import { useFavorites } from "../hooks/useFavorites";
+import { menuApi, favoritesApi } from "../api/configApi";
 import WeeklyGrid from "../components/menus/WeeklyGrid";
 import SwapModal from "../components/menus/SwapModal";
 import EditMealModal from "../components/menus/EditMealModal";
@@ -14,6 +15,7 @@ export default function MenuDetailPage() {
   const queryClient = useQueryClient();
   const menuId = parseInt(id || "0");
   const { data: menu, isLoading } = useMenu(menuId);
+  const { favorites } = useFavorites();
   const [dayIndex, setDayIndex] = useState(0);
   const [swapMeal, setSwapMeal] = useState<{ dayIndex: number; mealType: string } | null>(null);
   const [swapping, setSwapping] = useState(false);
@@ -29,6 +31,7 @@ export default function MenuDetailPage() {
 
   const dayLabels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
   const meals = menu.meals || [];
+  const favoriteNames = new Set((favorites || []).map((f: any) => f.dish_name));
   const currentSwapMeal = swapMeal
     ? meals.find(
         (m: any) =>
@@ -36,12 +39,29 @@ export default function MenuDetailPage() {
       )
     : null;
 
-  const handleRate = async (mealId: number, rating: number) => {
+  const handleFavorite = async (meal: any) => {
     try {
-      await menuApi.rateMeal(menuId, mealId, rating);
-      queryClient.invalidateQueries({ queryKey: ["menu", menuId] });
+      if (favoriteNames.has(meal.dish_name)) {
+        const fav = (favorites || []).find((f: any) => f.dish_name === meal.dish_name);
+        if (fav) await favoritesApi.remove(fav.id);
+      } else {
+        const num = (v: any) => (v != null ? Number(v) : undefined);
+        const str = (v: any) => (v != null ? String(v) : undefined);
+        await favoritesApi.add({
+          dish_name: meal.dish_name,
+          meal_type: str(meal.meal_type),
+          calories: num(meal.calories),
+          protein_g: num(meal.protein_g),
+          carbs_g: num(meal.carbs_g),
+          fiber_g: num(meal.fiber_g),
+          portions: str(meal.portions),
+          ingredients: meal.ingredients ?? undefined,
+          recipe_steps: meal.recipe_steps ?? undefined,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["favorites"] });
     } catch (err) {
-      console.error("Error rating meal:", err);
+      console.error("Error toggling favorite:", err);
     }
   };
 
@@ -114,7 +134,8 @@ export default function MenuDetailPage() {
         meals={meals}
         dayIndex={dayIndex}
         onSwap={(di, mt) => setSwapMeal({ dayIndex: di, mealType: mt })}
-        onRate={handleRate}
+        onFavorite={handleFavorite}
+        favoriteNames={favoriteNames}
         onEdit={(meal) => setEditMeal(meal)}
       />
 

@@ -56,9 +56,10 @@ ${intensities}
 
 Reglas:
 - NO repetir platillos en la misma semana
-- Incluir porciones, ingredientes con cantidades, y pasos de receta
+- Incluir porciones, ingredientes con cantidades, y pasos de receta DETALLADOS
 - CADA DÍA debe incluir EXACTAMENTE TODAS estas comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack" : ""}
 - RESPETA el límite calórico diario de ${config.calorie_limit} kcal: la suma de TODAS las comidas del día NO debe exceder este límite
+- Los pasos de receta deben ser COMPLETOS y DESCRIPTIVOS: incluir temperaturas, tiempos de cocción, técnicas culinarias (ej. "sofríe la cebolla a fuego medio por 5 minutos hasta que esté transparente", "hornea a 180°C por 25 minutos", "deja reposar 10 minutos antes de servir"). NO uses pasos genéricos como "cocinar" o "preparar" sin detalles.
 - Distribuye las calorías según la intensidad: "ligero" = pocas calorías, "normal" = moderado, "sustancioso" = muchas calorías
 - La suma total del día debe acercarse lo más posible a ${config.calorie_limit} kcal sin pasarse`;
 
@@ -260,7 +261,8 @@ Basado en este perfil: ${JSON.stringify(config)}
 
 Genera 10 platillos variados que este usuario podría disfrutar.
 NO incluyas estos platillos ya mostrados anteriormente: ${(params.excludeDishes || []).join(", ")}
-Cada platillo debe ser único e incluir ingredientes detallados y pasos de receta completos.`;
+Cada platillo debe ser único e incluir ingredientes detallados y pasos de receta COMPLETOS y DESCRIPTIVOS.
+Los pasos deben incluir temperaturas, tiempos de cocción y técnicas culinarias específicas.`;
 
   const userPrompt = `Genera 10 platillos variados. Incluye la dificultad de cada platillo.
 

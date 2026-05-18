@@ -1,0 +1,26 @@
+{
+  "name": "WhatToEat",
+  "short_name": "WhatToEat",
+  "description": "Generador de menús semanales personalizados con IA",
+  "start_url": "/WhatToEat/",
+  "scope": "/WhatToEat/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5e6d3",
+  "theme_color": "#e07a5f",
+  "categories": ["food", "health", "lifestyle"],
+  "icons": [
+    {
+      "src": "/WhatToEat/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/WhatToEat/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

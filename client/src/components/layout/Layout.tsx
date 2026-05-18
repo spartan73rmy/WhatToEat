@@ -2,9 +2,14 @@ import { useState, useEffect, ReactNode } from "react";
 import Navbar from "./Navbar";
 import CinnamonRoll from "./CinnamonRoll";
 import CreateMenuModal from "../menus/CreateMenuModal";
+import { aiApi } from "../../api/configApi";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [showCreateMenu, setShowCreateMenu] = useState(false);
+
+  useEffect(() => {
+    aiApi.warmup();
+  }, []);
 
   useEffect(() => {
     const handler = () => setShowCreateMenu(true);

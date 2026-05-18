@@ -39,7 +39,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200) {
+          if (response && response.status === 200 && request.method === 'GET') {
             const clone = response.clone();
             caches.open(DYNAMIC_CACHE).then((cache) => {
               cache.put(request, clone);
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((response) => {
-        if (!response || response.status !== 200) return response;
+        if (!response || response.status !== 200 || request.method !== 'GET') return response;
         const clone = response.clone();
         caches.open(STATIC_CACHE).then((cache) => {
           cache.put(request, clone);

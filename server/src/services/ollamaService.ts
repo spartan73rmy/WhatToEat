@@ -14,7 +14,9 @@ class OllamaService {
           { role: "user", content: prompt },
         ],
         stream: false,
-        options: { temperature: 0.7 },
+        format: "json",
+        keep_alive: "30m",
+        options: { temperature: 0.5, repeat_penalty: 1.1 },
       }),
       signal: AbortSignal.timeout(120_000),
     });
@@ -25,6 +27,21 @@ class OllamaService {
 
     const data = await res.json() as { message: { content: string } };
     return data.message.content;
+  }
+
+  async warmup(): Promise<void> {
+    const url = `${this.baseUrl}/api/generate`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.model, prompt: "hola", stream: false, keep_alive: "30m" }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (res.ok) console.log(`Modelo ${this.model} cargado en memoria`);
+    } catch (err) {
+      console.warn(`No se pudo pre-cargar ${this.model} (se cargará bajo demanda):`, (err as Error).message);
+    }
   }
 
   async *chatStream(
@@ -54,7 +71,9 @@ class OllamaService {
             { role: "user", content: prompt },
           ],
           stream: true,
-          options: { temperature: 0.7 },
+          format: "json",
+          keep_alive: "30m",
+          options: { temperature: 0.5, repeat_penalty: 1.1 },
         }),
         signal: controller.signal,
       });

@@ -11,8 +11,8 @@ const links = [
 export default function Navbar() {
   return (
     <nav className="bg-white shadow-sm border-b">
-      <div className="max-w-6xl mx-auto px-4 flex items-center gap-6 h-14">
-        <span className="font-bold text-lg text-amber-600">WhatToEat</span>
+      <div className="max-w-6xl mx-auto px-4 flex items-center gap-1 sm:gap-3 lg:gap-6 h-14">
+        <span className="font-bold text-lg text-amber-600 whitespace-nowrap">WhatToEat</span>
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -24,7 +24,7 @@ export default function Navbar() {
             }
           >
             <Icon size={18} />
-            {label}
+            <span className="hidden sm:inline">{label}</span>
           </NavLink>
         ))}
       </div>

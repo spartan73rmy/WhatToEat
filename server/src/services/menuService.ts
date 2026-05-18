@@ -12,6 +12,62 @@ function extractJson(raw: string): string {
   return raw.slice(start, end + 1);
 }
 
+function safeJsonParse<T>(raw: string, fallback: T): T {
+  const json = extractJson(raw);
+  try {
+    return JSON.parse(json);
+  } catch {
+    let cleaned = json
+      .replace(/,(\s*[}\]])/g, '$1')
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+      .replace(/:\s*'([^']*)'/g, ':"$1"')
+      .replace(/'/g, '"');
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+const SPANISH_STOP_WORDS = new Set([
+  "al","con","de","en","para","por","un","una","el","la","los","las",
+  "del","y","e","o","a","su","que","es","se","no","lo","como","más",
+  "pero","sus","le","ya","este","entre","todo","esta","sin","cada","algo",
+  "del","con","muy","bien","poco","si","me","te","nos","les","tu"
+]);
+
+function normalizeDishName(name: string): Set<string> {
+  return new Set(
+    name
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !SPANISH_STOP_WORDS.has(w))
+  );
+}
+
+function jaccardSimilarity(wordsA: Set<string>, wordsB: Set<string>): number {
+  if (wordsA.size === 0 && wordsB.size === 0) return 1;
+  let intersect = 0;
+  for (const w of wordsA) if (wordsB.has(w)) intersect++;
+  const union = wordsA.size + wordsB.size - intersect;
+  return union === 0 ? 0 : intersect / union;
+}
+
+function isDuplicateDish(newName: string, existingNames: string[], threshold = 0.55): string | null {
+  const newWords = normalizeDishName(newName);
+  if (newWords.size === 0) return null;
+  for (const existing of existingNames) {
+    const existingWords = normalizeDishName(existing);
+    if (jaccardSimilarity(newWords, existingWords) > threshold) {
+      return existing;
+    }
+  }
+  return null;
+}
+
 async function buildMenuPrompts(params: {
   name: string;
   cuisines?: string[];
@@ -261,6 +317,7 @@ Intensidad de cada comida (define el tamaño de la porción y calorías):
 ${intensities}
 
 Reglas:
+- NO repetir platillos en la misma semana
 - Incluir porciones, ingredientes con cantidades, y pasos de receta DETALLADOS
 - RESPETA el límite calórico diario de ${config.calorie_limit} kcal: la suma de TODAS las comidas del día NO debe exceder este límite
 - Los pasos de receta deben ser COMPLETOS y DESCRIPTIVOS: incluir temperaturas, tiempos de cocción, técnicas culinarias (ej. "sofríe la cebolla a fuego medio por 5 minutos hasta que esté transparente", "hornea a 180°C por 25 minutos", "deja reposar 10 minutos antes de servir"). NO uses pasos genéricos como "cocinar" o "preparar" sin detalles.
@@ -284,10 +341,20 @@ Reglas:
 
   yield { type: "start", total: 7 };
 
-  let allDishNames: string[] = [];
+  const prevDishes = await pool.query(
+    `SELECT DISTINCT dish_name FROM meals WHERE menu_id IN (SELECT id FROM weekly_menus ORDER BY created_at DESC LIMIT 3)`
+  );
+  let allDishNames: string[] = prevDishes.rows.map(r => r.dish_name);
   let usedIngredients: string[] = [];
   let usedPantry: string[] = [];
   let priceCategory = "medio";
+
+  const unusedFavs = await pool.query(
+    `SELECT dish_name FROM favorite_dishes WHERE last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '30 days' ORDER BY created_at DESC LIMIT 5`
+  );
+  const favoriteSuggestionsText = unusedFavs.rows.length > 0
+    ? `\n\nPlatillos favoritos del usuario que no se han incluido últimamente (CONSIDERA incluir algunos de estos):\n${unusedFavs.rows.map(r => `  - ${r.dish_name}`).join("\n")}`
+    : "";
 
   for (let dayIdx = 0; dayIdx < dayNames.length; dayIdx++) {
     const dayName = dayNames[dayIdx];
@@ -312,10 +379,19 @@ Reglas:
 Este día debe incluir estas comidas: ${mealTypes}${config.include_snacks ? ", más 1 snack" : ""}.
 Límite calórico: ${config.calorie_limit} kcal para todo el día.
 
-Platillos YA USADOS en días anteriores (NO los repitas):
-${allDishNames.map(d => `  - ${d}`).join("\n")}${usedPantryText}${pantryRemainingText}${avoidIngText}
+${usedPantryText}${pantryRemainingText}${avoidIngText}${favoriteSuggestionsText}
 
 ${dayIdx === 0 ? 'Además, estima el costo total del menú semanal en México: elige UNA de estas categorías: "barato", "medio", "caro", "muy_caro". Inclúyela como "price_category" en el JSON.' : ''}
+
+⚠️ ADVERTENCIA — Platillos PROHIBIDOS (NO generes NINGUNO de estos ni variaciones similares):
+${allDishNames.map(d => `  - ${d}`).join("\n")}
+
+REGLAS ESTRICTAS para evitar duplicados:
+- Si un platillo prohibido contiene ciertos ingredientes (ej. "Espárragos" + "Pollo"), NO combines esos mismos ingredientes en un platillo nuevo
+- Si un platillo prohibido tiene "Agua de Fresas", no la combines con los mismos ingredientes base
+- Cambiar una palabra, agregar "con" o modificar la preparación NO cuenta como platillo diferente
+- Ejemplo: "Pollo al Horno" y "Pollo al Comal" se consideran el mismo platillo si el ingrediente principal es igual
+- Debes generar platillos COMPLETAMENTE DIFERENTES en ingredientes principales y nombre
 
 Formato JSON (solo este día, NO incluyas otros días):
 {
@@ -349,38 +425,68 @@ Formato JSON (solo este día, NO incluyas otros días):
   "snacks": []
 }`;
 
-    let fullText = "";
-    try {
-      const stream = ollamaService.chatStream(userPrompt, systemPrompt, signal);
-      for await (const token of stream) {
-        fullText += token;
-        yield { type: "token", content: token };
+    const MAX_RETRIES = 2;
+    let dayData: any = null;
+    let attempt = 0;
+    let currentPrompt = userPrompt;
+    let duplicateNames: string[] = [];
+
+    while (attempt <= MAX_RETRIES) {
+      if (attempt > 0) {
+        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "generating" };
+        yield { type: "token", content: `\n[Reintento ${attempt}/${MAX_RETRIES} — evitando: ${duplicateNames.join(", ")}]\n` };
       }
-    } catch (err: any) {
-      if (err.name === "AbortError" || err.message?.includes("abort") || err.message?.includes("Timeout")) {
-        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "Generación cancelada o agotó el tiempo" };
+
+      let fullText = "";
+      try {
+        if (attempt === 0 && dayIdx === 0) {
+          yield { type: "token", content: "[Cargando modelo...]" };
+        }
+        const stream = ollamaService.chatStream(currentPrompt, systemPrompt, signal);
+        for await (const token of stream) {
+          fullText += token;
+          yield { type: "token", content: token };
+        }
+      } catch (err: any) {
+        if (err.name === "AbortError" || err.message?.includes("abort") || err.message?.includes("Timeout")) {
+          yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "Generación cancelada o agotó el tiempo" };
+          continue;
+        }
+        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: err.message };
         continue;
       }
-      yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: err.message };
-      continue;
+
+      try {
+        dayData = JSON.parse(extractJson(fullText));
+      } catch {
+        if (attempt < MAX_RETRIES) { attempt++; continue; }
+        yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "La IA generó JSON inválido después de reintentos" };
+        continue;
+      }
+
+      duplicateNames = (dayData.meals || [])
+        .map((m: any) => m.dish_name?.trim())
+        .filter((n: string) => n && isDuplicateDish(n, allDishNames, 0.55));
+
+      if (duplicateNames.length === 0) break;
+
+      if (attempt >= MAX_RETRIES) {
+        break;
+      }
+
+      attempt++;
+      currentPrompt = currentPrompt + `\n\nATENCIÓN: El intento anterior generó platillos que ya existen:\n${duplicateNames.map((n: string) => `  - ${n}`).join("\n")}\nNO generes NINGUNO de esos platillos. Deben ser COMPLETAMENTE DIFERENTES en nombre e ingredientes.`;
     }
 
-    let dayData: any;
-    try {
-      dayData = JSON.parse(extractJson(fullText));
-    } catch (err: any) {
-      yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "error", error: "La IA generó JSON inválido. Reintentando..." };
-      continue;
-    }
-
-    if (dayIdx === 0 && dayData.price_category) {
+    if (dayIdx === 0 && dayData?.price_category) {
       priceCategory = dayData.price_category;
       await pool.query("UPDATE weekly_menus SET price_category = $1 WHERE id = $2", [priceCategory, menu.id]);
     }
 
+    const meals = dayData?.meals || [];
+
     yield { type: "day", day: dayIdx + 1, total: 7, dayName, status: "saving" };
 
-    const meals = dayData.meals || [];
     for (const meal of meals) {
       const dishName = meal.dish_name?.trim() || `${meal.type}_${dayName}`;
       const isSnack = meal.type === "snack" || meal.is_snack === true;
@@ -436,6 +542,18 @@ Formato JSON (solo este día, NO incluyas otros días):
 
     const dayDishes = meals.map((m: any) => m.dish_name).filter(Boolean);
     allDishNames.push(...dayDishes);
+
+    for (const dishName of dayDishes) {
+      await pool.query(
+        `UPDATE favorite_dishes SET last_used_at = NOW() WHERE LOWER(dish_name) = LOWER($1)`,
+        [dishName]
+      );
+    }
+
+    await pool.query(
+      `UPDATE meals SET last_menu_inclusion = NOW() WHERE menu_id = $1 AND day_index = $2`,
+      [menu.id, dayIdx]
+    );
 
     const dayIngs = meals.flatMap((m: any) =>
       (m.ingredients || []).map((i: any) => i.name).filter(Boolean)
@@ -571,7 +689,8 @@ Formato JSON:
 ]`;
 
   const raw = await ollamaService.chat(userPrompt, systemPrompt);
-  return JSON.parse(extractJson(raw));
+  const dishes = safeJsonParse(raw, [] as any[]);
+  return dishes;
 }
 
 export async function suggestCuisines() {

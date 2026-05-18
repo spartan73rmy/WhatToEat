@@ -75,6 +75,8 @@ INSERT INTO user_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 ALTER TABLE weekly_menus ADD COLUMN IF NOT EXISTS price_category TEXT;
 ALTER TABLE meals ADD COLUMN IF NOT EXISTS price DECIMAL(10,2);
+ALTER TABLE favorite_dishes ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP;
+ALTER TABLE meals ADD COLUMN IF NOT EXISTS last_menu_inclusion TIMESTAMP;
 `;
 
 async function migrate() {

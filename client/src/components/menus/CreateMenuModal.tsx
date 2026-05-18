@@ -4,7 +4,7 @@ import {
   Loader2, Save, XCircle, Circle
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-
+import { API_BASE } from "../../api/configApi";
 
 interface CreateMenuModalProps {
   open: boolean;
@@ -26,8 +26,6 @@ const cuisinesList = [
 ];
 
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-
-const API_BASE = "/api";
 
 interface DayState {
   dayName: string;
@@ -356,7 +354,7 @@ export default function CreateMenuModal({ open, onClose }: CreateMenuModalProps)
             <div className="flex items-center gap-3 mt-6">
               {generating && (
                 <img
-                  src="/cinnamo_pensando.png"
+                  src={`${import.meta.env.BASE_URL}cinnamo_pensando.png`}
                   alt="Cinnamoroll pensando"
                   className="h-16 w-auto animate-bounce"
                 />

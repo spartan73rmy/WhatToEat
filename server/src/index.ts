@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { initDb } from "./db/pool";
+import { ollamaService } from "./services/ollamaService";
 import configRoutes from "./routes/configRoutes";
 import menuRoutes from "./routes/menuRoutes";
 import exploreRoutes from "./routes/exploreRoutes";
@@ -49,6 +50,7 @@ async function start() {
   await initDb();
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    ollamaService.warmup();
   });
 }
 

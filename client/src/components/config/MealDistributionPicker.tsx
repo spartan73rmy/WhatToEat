@@ -9,7 +9,7 @@ export default function MealDistributionPicker() {
   return (
     <div className="bg-white rounded-xl p-5 shadow-sm border">
       <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">🍽 Distribución</h2>
-      <div className="flex gap-4 mb-3">
+      <div className="flex gap-4 mb-3 flex-wrap">
         {patterns.map((p) => (
           <label key={p} className="flex items-center gap-2 cursor-pointer">
             <input

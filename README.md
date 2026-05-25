@@ -2,7 +2,7 @@
 
 **Generador de menús semanales personalizados con IA.**
 
-WhatToEat es una aplicación web que utiliza un modelo local de IA (Ollama) para crear menús semanales adaptados a tu perfil, objetivos nutricionales y preferencias culinarias. Controla calorías, balance de macronutrientes, y evita la repetición de platillos.
+WhatToEat es una aplicación web que utiliza IA (OpenRouter + DeepSeek V4 Flash) para crear menús semanales adaptados a tu perfil, objetivos nutricionales y preferencias culinarias. Controla calorías, balance de macronutrientes, y evita la repetición de platillos.
 
 ---
 
@@ -10,7 +10,7 @@ WhatToEat es una aplicación web que utiliza un modelo local de IA (Ollama) para
 
 - **Configuración única de perfil** — Edad, género, actividad, objetivo (bajar de peso/mantener/aumentar masa) y déficit calórico. Se guarda una vez y se reusa en todas las generaciones.
 - **Distribución de comidas flexible** — Elige entre 3, 4 o 5 comidas al día, con o sin snacks. Define la intensidad de cada comida (ligero/normal/sustancioso).
-- **Generación de menú con IA local** — Ollama + qwen2.5:7b corre en tu propia máquina (RTX 3060 12GB). Sin APIs externas, sin límites, sin costo recurrente.
+- **Generación de menú con IA** — OpenRouter + DeepSeek V4 Flash (modelo gratuito). Sin GPU requerida, sin configuración local de modelos.
 - **Control calórico y macros** — Cada menú respeta un límite de calorías diarias y balance de proteína ~25%, carbohidratos ~50%, fibra ~25%.
 - **Swap inteligente** — No te gusta un platillo? Reemplázalo con IA indicando ingredientes que quieras usar, antojos o alimentos a evitar.
 - **Explorar platillos** — Descubre nuevas recetas con scroll infinito, todas generadas según tu perfil. Agrégalas a un menú o guárdalas como favoritas.
@@ -28,7 +28,7 @@ WhatToEat es una aplicación web que utiliza un modelo local de IA (Ollama) para
 | **Frontend** | React 18, Vite, Tailwind CSS, Framer Motion, TanStack React Query, React Router v7 |
 | **Backend** | Express.js, node-postgres (pg), zod |
 | **Base de Datos** | PostgreSQL |
-| **IA Local** | Ollama + qwen2.5:7b |
+| **IA** | OpenRouter API + DeepSeek V4 Flash (free) |
 
 ---
 
@@ -36,12 +36,7 @@ WhatToEat es una aplicación web que utiliza un modelo local de IA (Ollama) para
 
 - **Node.js** 18+
 - **PostgreSQL** 14+
-- **Ollama** instalado y corriendo ([ollama.ai](https://ollama.ai))
-- **Modelo qwen2.5:7b** descargado:
-  ```bash
-  ollama pull qwen2.5:7b
-  ```
-- **GPU recomendada:** NVIDIA RTX 3060 12GB (o superior) para velocidad óptima. También funciona en CPU (más lento).
+- **API Key de OpenRouter** (gratis, créala en [openrouter.ai/keys](https://openrouter.ai/keys))
 
 ---
 
@@ -73,21 +68,15 @@ Edita `server/.env`:
 ```
 PORT=3001
 DATABASE_URL=postgresql://usuario:password@localhost:5432/whattoeat
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b
+OPENROUTER_API_KEY=sk-or-v1-tu-key-aqui
+OPENROUTER_MODEL=deepseek/deepseek-v4-flash:free
 CLIENT_URL=http://localhost:5173
 ```
 
-### 4. Iniciar Ollama
+### 4. Verificar la API key
 
 ```bash
-ollama serve
-```
-
-Verifica que responda:
-
-```bash
-curl http://localhost:11434/api/tags
+curl -H "Authorization: Bearer TU_API_KEY" https://openrouter.ai/api/v1/auth/key
 ```
 
 ### 5. Instalar dependencias
@@ -201,14 +190,14 @@ WhatToEat/
 
 ## 🧠 Cómo funciona la IA
 
-### Conexión con Ollama
+### Conexión con OpenRouter
 
-El backend se comunica con Ollama a través de su API REST en `localhost:11434`. Todas las llamadas pasan por un `OllamaService` que construye prompts estructurados, llama al modelo y parsea la respuesta JSON.
+El backend se comunica con OpenRouter a través de su API REST en `https://openrouter.ai/api/v1/chat/completions`. Todas las llamadas pasan por un `OpenRouterService` que construye prompts estructurados, llama al modelo DeepSeek V4 Flash y parsea la respuesta JSON.
 
 **Arquitectura:**
 
 ```
-React → POST /api/menus/generate → Express → ollamaService.ts → fetch("localhost:11434/api/chat") → Ollama
+React → POST /api/menus/generate → Express → openRouterService.ts → fetch("openrouter.ai/...") → OpenRouter
 ```
 
 ### Prompt personalizado
@@ -244,27 +233,22 @@ El **cinnamon roll** en el footer usa Framer Motion:
 |---|---|---|
 | `PORT` | `3001` | Puerto del backend |
 | `DATABASE_URL` | — | URL de conexión PostgreSQL |
-| `OLLAMA_URL` | `http://localhost:11434` | URL del servidor Ollama |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | Modelo de IA a utilizar |
+| `OPENROUTER_API_KEY` | — | API key de OpenRouter |
+| `OPENROUTER_MODEL` | `deepseek/deepseek-v4-flash:free` | Modelo de IA a utilizar |
 | `CLIENT_URL` | `http://localhost:5173` | URL del frontend (CORS) |
 
 ### Modelos Alternativos
 
-El proyecto funciona con cualquier modelo de Ollama compatible con chat. Recomendados para español:
+El proyecto funciona con cualquier modelo disponible en OpenRouter. Recomendados gratuitos:
 
-| Modelo | Ventaja |
-|---|---|
-| `qwen2.5:7b` | 🏆 Mejor equilibrio español/velocidad |
-| `aya:8b` | Excelente para español (diseñado para multi-lenguaje) |
-| `llama3.1:8b` | Bueno en general |
-| `mistral:7b` | Más rápido, español aceptable |
+| Modelo | ID | Contexto |
+|---|---|---|
+| DeepSeek V4 Flash (free) 🏆 | `deepseek/deepseek-v4-flash:free` | 1.05M |
+| Google Gemini 2.0 Flash (free) | `google/gemini-2.0-flash-exp:free` | 1M |
+| Meta Llama 3.3 70B (free) | `meta-llama/llama-3.3-70b-instruct:free` | 128K |
+| Mistral Small 24B (free) | `mistralai/mistral-small-24b-instruct-2501:free` | 32K |
 
-Para cambiar de modelo:
-
-```bash
-ollama pull aya:8b
-# Editar OLLAMA_MODEL=aya:8b en server/.env
-```
+Para cambiar de modelo, edita `OPENROUTER_MODEL` en `server/.env`.
 
 ---
 

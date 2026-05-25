@@ -1,6 +1,6 @@
 # Plan de Arquitectura — WhatToEat
 
-Aplicación web para generar menús semanales personalizados con IA (Ollama), control calórico y balance nutricional.
+Aplicación web para generar menús semanales personalizados con IA (OpenRouter), control calórico y balance nutricional.
 
 ---
 
@@ -20,8 +20,7 @@ Aplicación web para generar menús semanales personalizados con IA (Ollama), co
 | | zod | Validación de schemas |
 | | cors + helmet | Seguridad |
 | | dotenv | Config vars |
-| | node-fetch | Llamadas HTTP a Ollama |
-| **IA Local** | Ollama + qwen2.5:7b | Generación de menús y sugerencias |
+| **IA** | OpenRouter API + DeepSeek V4 Flash (free) | Generación de menús y sugerencias |
 | **Base de Datos** | PostgreSQL | Persistencia |
 
 ---
@@ -94,7 +93,7 @@ WhatToEat/
 │   │   │   ├── favoritesRoutes.ts
 │   │   │   └── aiRoutes.ts
 │   │   ├── services/
-│   │   │   ├── ollamaService.ts     # Prompts + comunicación con Ollama
+│   │   │   ├── openRouterService.ts  # Prompts + comunicación con OpenRouter
 │   │   │   ├── menuService.ts
 │   │   │   ├── configService.ts
 │   │   │   └── exploreService.ts
@@ -280,17 +279,17 @@ CREATE TABLE favorite_dishes (
 | `GET` | `/api/menus` | Listar todos los menús |
 | `POST` | `/api/menus` | Crear menú vacío (body: `{ name }`) |
 | `GET` | `/api/menus/:id` | Menú completo con todas sus meals |
-| `POST` | `/api/menus/generate` | **Generar menú con IA** — recibe config opcional + cuisines + difficulty + pantry, llama a Ollama, guarda, actualiza config global si hay cambios |
+| `POST` | `/api/menus/generate` | **Generar menú con IA** — recibe config opcional + cuisines + difficulty + pantry, llama a OpenRouter, guarda, actualiza config global si hay cambios |
 | `POST` | `/api/menus/:id/swap-meal` | Reemplazar comida vía IA — body: `{ dayIndex, mealType, preferredIngredients?, cravings?, avoidIngredients? }` |
 | `PUT` | `/api/menus/:id/meals/:mealId` | Editar comida manualmente |
 | `PUT` | `/api/menus/:id/meals/:mealId/rate` | Puntuar comida — body: `{ rating: 1-5 }` |
 | `DELETE` | `/api/menus/:id` | Eliminar menú (cascade meals) |
-| `POST` | `/api/explore` | **Explorar platillos** — body: `{ page, excludeDishes[] }` — llama a Ollama, devuelve 10 platillos nuevos |
+| `POST` | `/api/explore` | **Explorar platillos** — body: `{ page, excludeDishes[] }` — llama a OpenRouter, devuelve 10 platillos nuevos |
 | `POST` | `/api/explore/add-to-menu` | Agregar platillo explorado a un menú — body: `{ menuId, dayIndex, mealType, dish }` |
 | `GET` | `/api/favorites` | Listar favoritos |
 | `POST` | `/api/favorites` | Guardar favorito — body: dish completo |
 | `DELETE` | `/api/favorites/:id` | Quitar favorito |
-| `POST` | `/api/ai/suggest-cuisines` | **IA sugiere cocinas** según perfil — llama a Ollama, devuelve `string[]` |
+| `POST` | `/api/ai/suggest-cuisines` | **IA sugiere cocinas** según perfil — llama a OpenRouter, devuelve `string[]` |
 
 ### Handler: Generar Menú (`POST /api/menus/generate`)
 
@@ -299,13 +298,13 @@ CREATE TABLE favorite_dishes (
 2. Leer user_config actual
 3. Merge: si hay profileOverrides, aplicarlos y guardarlos en user_config
 4. Consultar meals con rating ≥ 4 de hace > 1 mes para re-sugerencia
-5. Construir prompt para Ollama con:
+5. Construir prompt para OpenRouter con:
    - Datos completos del perfil
    - Cocinas seleccionadas
    - Dificultad
    - Ingredientes en despensa
    - Platillos que el usuario disfrutó (elegibles para re-sugerir)
-6. Llamar a POST http://localhost:11434/api/chat con modelo qwen2.5:7b
+6. Llamar a POST https://openrouter.ai/api/v1/chat/completions con modelo deepseek/deepseek-v4-flash:free
 7. Parsear respuesta JSON
 8. Guardar en weekly_menus + meals
 9. Devolver menú creado
@@ -318,7 +317,7 @@ CREATE TABLE favorite_dishes (
 2. Obtener meal actual de la BD
 3. Construir prompt con contexto del perfil (del config_snapshot del menú)
 4. Incluir: plato actual, preferencias, antojos, ingredientes a evitar
-5. Llamar a Ollama
+5. Llamar a OpenRouter
 6. Parsear JSON del nuevo platillo
 7. Actualizar meal en BD (incrementar swap_count, mantener original_dish_name)
 8. Devolver meal actualizada
@@ -330,7 +329,7 @@ CREATE TABLE favorite_dishes (
 1. Recibir: { page, excludeDishes[] }
 2. Leer user_config
 3. Construir prompt: "Genera 10 platillos variados. NO incluyas: [...excludeDishes]"
-4. Llamar a Ollama
+4. Llamar a OpenRouter
 5. Devolver array de platillos
 ```
 
@@ -339,7 +338,7 @@ CREATE TABLE favorite_dishes (
 ```
 1. Leer user_config
 2. Prompt: "Recomienda 3-5 cocinas ideales para: mujer 28, sedentaria, bajar de peso, déficit 500kcal"
-3. Llamar a Ollama
+3. Llamar a OpenRouter
 4. Devolver string[]
 ```
 
@@ -589,48 +588,63 @@ Formato JSON array:
 
 ---
 
-## Integración con Ollama
+## Integración con OpenRouter
 
-**Opción seleccionada:** Backend proxy vía `node-fetch`
+**Opción seleccionada:** API REST vía `node-fetch` (compatible con OpenAI SDK)
 
 ```
-React → POST /api/menus/generate → Express → ollamaService.ts → fetch("http://localhost:11434/api/chat") → Ollama
+React → POST /api/menus/generate → Express → openRouterService.ts → fetch("https://openrouter.ai/api/v1/chat/completions") → OpenRouter
 ```
 
-El backend encapsula toda la lógica de comunicación con Ollama en `ollamaService.ts`:
+El backend encapsula toda la lógica de comunicación con OpenRouter en `openRouterService.ts`:
 
 ```typescript
-// server/src/services/ollamaService.ts
-class OllamaService {
-  private baseUrl = "http://localhost:11434";
-  private model = "qwen2.5:7b";
+// server/src/services/openRouterService.ts
+class OpenRouterService {
+  private apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+  private apiKey: string;
+  private model = "deepseek/deepseek-v4-flash:free";
+
+  constructor() {
+    this.apiKey = process.env.OPENROUTER_API_KEY || "";
+  }
 
   async chat(prompt: string, systemPrompt: string): Promise<string> {
-    const res = await fetch(`${this.baseUrl}/api/chat`, {
+    const res = await fetch(this.apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         model: this.model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
-        stream: false,
-        options: { temperature: 0.7 },
+        temperature: 0.7,
+        max_tokens: 4096,
       }),
     });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenRouter error ${res.status}: ${err}`);
+    }
+
     const data = await res.json();
-    return data.message.content;
+    return data.choices[0].message.content;
   }
 }
 ```
 
-**Ventajas de esta opción:**
-- Ollama nunca se expone al frontend (seguridad)
-- El backend puede cachear respuestas frecuentes
-- Se puede agregar rate limiting y logging centralizado
-- Fácil cambiar de modelo o proveedor de IA en el futuro
-- Sin necesidad de configurar CORS en Ollama
+**Ventajas de OpenRouter:**
+- Sin GPU requerida — corre en servidores remotos
+- Modelo DeepSeek V4 Flash gratuito con contexto de 1.05M tokens
+- API compatible con OpenAI SDK
+- Sin configuración local de modelos
+- Rate limit: 20 req/min, 50 req/día (1000 con $10+ en créditos)
+- Fácil cambiar a cualquier otro modelo disponible en OpenRouter
 
 ---
 
@@ -722,14 +736,15 @@ Estados de animación:
 ## Consideraciones Técnicas
 
 ### Rendimiento
-- Ollama en RTX 3060 12GB con qwen2.5:7b: ~20-40 tok/s
-- Generación de menú completo: ~10-20 segundos
+- OpenRouter DeepSeek V4 Flash: ~100-200 tok/s (depende del servidor)
+- Generación de menú completo: ~5-15 segundos
 - El frontend debe mostrar un estado "Generando..." con el cinnamon roll animado
 
 ### Errores y Timeouts
-- Si Ollama no responde en 30s, backend retorna error 503
-- Si la respuesta de Ollama no es JSON válido, reintentar 1 vez con temperatura más baja
+- Si OpenRouter no responde en 30s, backend retorna error 503
+- Si la respuesta de OpenRouter no es JSON válido, reintentar 1 vez con temperatura más baja
 - Si el parseo falla, devolver error con mensaje amigable
+- Manejar errores 429 (rate limit) y 403 (API key inválida)
 
 ### Seed de Datos
 - Al iniciar la app por primera vez:
@@ -740,8 +755,8 @@ Estados de animación:
 ```
 PORT=3001
 DATABASE_URL=postgresql://user:pass@localhost:5432/whattoeat
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b
+OPENROUTER_API_KEY=sk-or-v1-tu-key-aqui
+OPENROUTER_MODEL=deepseek/deepseek-v4-flash:free
 CLIENT_URL=http://localhost:5173
 ```
 
